@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Board — ask your doubts, together</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="board-texture" aria-hidden="true"></div>
+
+<header class="hero">
+  <div class="chalk-underline" aria-hidden="true">
+    <svg viewBox="0 0 600 40" preserveAspectRatio="none"><path d="M2 25 C 100 10, 200 35, 300 20 S 500 5, 598 22" /></svg>
+  </div>
+  <p class="eyebrow">DAI · DSA · DLDCA · LOGIC · MISC</p>
+  <h1>Stuck on something?<br>Chalk it up.</h1>
+  <p class="subhead">Post your doubt anonymously. Anyone can jump in and help. No names, no judgement — just the board.</p>
+  <button class="btn-primary" id="openComposer">Pin a doubt</button>
+</header>
+
+<main>
+  <div class="board-controls">
+    <nav class="tabs" id="subjectTabs" aria-label="Filter by subject">
+      <button class="tab tab-all" data-subject="all" aria-pressed="true">
+        <span class="cap"></span>All
+      </button>
+      <button class="tab" data-subject="DAI" aria-pressed="false">
+        <span class="cap cap-dai"></span>DAI
+      </button>
+      <button class="tab" data-subject="DSA" aria-pressed="false">
+        <span class="cap cap-dsa"></span>DSA
+      </button>
+      <button class="tab" data-subject="DLDCA" aria-pressed="false">
+        <span class="cap cap-dldca"></span>DLDCA
+      </button>
+      <button class="tab" data-subject="Logic" aria-pressed="false">
+        <span class="cap cap-logic"></span>Logic
+      </button>
+      <button class="tab" data-subject="Misc" aria-pressed="false">
+        <span class="cap cap-misc"></span>Misc
+      </button>
+    </nav>
+    <div class="type-filter" id="typeFilter" role="tablist" aria-label="Filter by type">
+      <button class="type-tab is-active" data-type="all" aria-pressed="true">All</button>
+      <button class="type-tab" data-type="Doubt" aria-pressed="false">Doubt</button>
+      <button class="type-tab" data-type="Logistics" aria-pressed="false">Logistics</button>
+    </div>
+    <button class="view-toggle" id="viewToggle" aria-pressed="false">View archive</button>
+  </div>
+
+  <div id="feed" class="feed" aria-live="polite">
+    <!-- doubt cards get rendered here by app.js -->
+  </div>
+
+  <div id="emptyState" class="empty-state" hidden>
+    <p>The board's empty here. Be the first to pin something.</p>
+  </div>
+
+  <div id="loadingState" class="loading-state">
+    <p>Chalk dust settling…</p>
+  </div>
+</main>
+
+<!-- Composer modal -->
+<div class="modal-backdrop" id="modalBackdrop" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="composerTitle">
+    <button class="modal-close" id="closeComposer" aria-label="Close">×</button>
+    <h2 id="composerTitle">Pin a doubt</h2>
+    <p class="modal-hint">Posted anonymously. Be specific — "why does my recursion overflow" gets better answers than "help".</p>
+
+    <label class="field-label" for="subjectSelect">Subject</label>
+    <select id="subjectSelect">
+      <option value="DAI">DAI</option>
+      <option value="DSA">DSA</option>
+      <option value="DLDCA">DLDCA</option>
+      <option value="Logic">Logic</option>
+      <option value="Misc">Misc</option>
+    </select>
+
+    <label class="field-label">What kind of post is this?</label>
+    <div class="type-toggle" id="typeSelect" role="radiogroup" aria-label="Post type">
+      <button type="button" class="type-option is-active" data-type="Doubt" role="radio" aria-checked="true">Doubt<span class="type-sub">a concept you're stuck on</span></button>
+      <button type="button" class="type-option" data-type="Logistics" role="radio" aria-checked="false">Logistics<span class="type-sub">deadlines, timings, submissions</span></button>
+    </div>
+
+    <label class="field-label" for="doubtTitle">One-line summary</label>
+    <input id="doubtTitle" type="text" maxlength="120" placeholder="e.g. Why is my merge sort O(n log n) and not O(n²)?">
+
+    <label class="field-label" for="doubtBody">Details (optional)</label>
+    <textarea id="doubtBody" rows="4" maxlength="1000" placeholder="Paste code, describe where you're stuck, add context…"></textarea>
+
+    <button class="btn-primary" id="submitDoubt">Pin it</button>
+    <p class="error-msg" id="composerError" hidden></p>
+  </div>
+</div>
+
+<!-- Thread modal -->
+<div class="modal-backdrop" id="threadBackdrop" hidden>
+  <div class="modal modal-thread" role="dialog" aria-modal="true">
+    <button class="modal-close" id="closeThread" aria-label="Close">×</button>
+    <div id="adminThreadActions" class="admin-thread-actions" hidden></div>
+    <div id="threadContent"></div>
+  </div>
+</div>
+
+<!-- Admin login modal -->
+<div class="modal-backdrop" id="adminBackdrop" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="adminTitle">
+    <button class="modal-close" id="closeAdmin" aria-label="Close">×</button>
+    <h2 id="adminTitle">Admin sign in</h2>
+    <p class="modal-hint">For the person running the board — replies you post while signed in are labelled with your name, and you can pin or archive doubts.</p>
+
+    <label class="field-label" for="adminEmail">Email</label>
+    <input id="adminEmail" type="email" autocomplete="username">
+
+    <label class="field-label" for="adminPassword">Password</label>
+    <input id="adminPassword" type="password" autocomplete="current-password">
+
+    <label class="field-label" for="adminName">Name shown on your replies</label>
+    <input id="adminName" type="text" maxlength="30" placeholder="e.g. Rohan (Mentor)">
+
+    <button class="btn-primary" id="submitAdminLogin">Sign in</button>
+    <p class="error-msg" id="adminError" hidden></p>
+  </div>
+</div>
+
+<footer class="site-footer">
+  <p>Anonymous by design. Be kind — everyone here is still learning.</p>
+  <div class="admin-bar" id="adminBarLoggedOut">
+    <button class="admin-link" id="openAdminLogin">Admin</button>
+  </div>
+  <div class="admin-bar" id="adminBarLoggedIn" hidden>
+    <span>Signed in as <strong id="adminNameLabel"></strong></span>
+    <button class="admin-link" id="adminLogout">Sign out</button>
+  </div>
+</footer>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>
