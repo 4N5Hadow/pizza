@@ -359,7 +359,7 @@ document.getElementById("submitAdminLogin").addEventListener("click", async () =
     localStorage.setItem("adminName", name);
     adminBackdrop.hidden = true;
   } catch (err) {
-    adminError.textContent = "Couldn't sign in — check the email and password.";
+    adminError.textContent = `Couldn't sign in (${err.code || err.message}) — check the email and password.`;
     adminError.hidden = false;
     console.error(err);
   }
