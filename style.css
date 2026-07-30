@@ -18,6 +18,16 @@
   --font-mono: 'JetBrains Mono', monospace;
 }
 
+[data-theme="light"] {
+  --chalk-bg: #f4f1e8;
+  --chalk-bg-2: #e7e2d3;
+  --chalk-text: #232323;
+  --chalk-text-dim: #6b6a5f;
+  --paper: #fffdf7;
+  --ink: #232323;
+  --ink-dim: #6b6a5f;
+}
+
 * { box-sizing: border-box; }
 
 @media (prefers-reduced-motion: reduce) {
@@ -31,6 +41,7 @@ body {
   font-family: var(--font-body);
   position: relative;
   min-height: 100vh;
+  transition: background 0.25s ease, color 0.25s ease;
 }
 
 .board-texture {
@@ -41,6 +52,69 @@ body {
   background-image:
     radial-gradient(circle at 20% 30%, rgba(255,255,255,0.025) 0, transparent 40%),
     radial-gradient(circle at 80% 70%, rgba(255,255,255,0.02) 0, transparent 45%);
+}
+
+.theme-toggle {
+  position: fixed;
+  top: 1.2rem;
+  right: 1.2rem;
+  z-index: 10;
+  background: var(--chalk-bg-2);
+  border: 1px solid rgba(128,128,128,0.25);
+  color: var(--chalk-text);
+  border-radius: 50%;
+  width: 42px;
+  height: 42px;
+  font-size: 1.1rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s ease, transform 0.15s ease;
+}
+.theme-toggle:hover { transform: scale(1.06); }
+
+.image-preview { margin-top: 0.6rem; }
+.image-preview img {
+  max-width: 100%;
+  max-height: 180px;
+  border-radius: 6px;
+  border: 1px solid rgba(0,0,0,0.1);
+  display: block;
+}
+
+.note-image {
+  width: 100%;
+  max-height: 160px;
+  object-fit: cover;
+  border-radius: 4px;
+  margin-bottom: 0.7rem;
+  display: block;
+}
+
+.thread-image {
+  width: 100%;
+  max-height: 340px;
+  object-fit: contain;
+  background: rgba(0,0,0,0.03);
+  border-radius: 6px;
+  margin-bottom: 1rem;
+  display: block;
+}
+
+.comment-image {
+  max-width: 100%;
+  max-height: 220px;
+  border-radius: 4px;
+  margin-top: 0.5rem;
+  display: block;
+}
+
+.upload-status {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--ink-dim);
+  margin-top: 0.4rem;
 }
 
 .hero {

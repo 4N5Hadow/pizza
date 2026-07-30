@@ -12,6 +12,8 @@
 
 <div class="board-texture" aria-hidden="true"></div>
 
+<button class="theme-toggle" id="themeToggle" aria-label="Switch between whiteboard and chalkboard mode" title="Switch theme">🌙</button>
+
 <header class="hero">
   <div class="chalk-underline" aria-hidden="true">
     <svg viewBox="0 0 600 40" preserveAspectRatio="none"><path d="M2 25 C 100 10, 200 35, 300 20 S 500 5, 598 22" /></svg>
@@ -92,6 +94,10 @@
 
     <label class="field-label" for="doubtBody">Details (optional)</label>
     <textarea id="doubtBody" rows="4" maxlength="1000" placeholder="Paste code, describe where you're stuck, add context…"></textarea>
+
+    <label class="field-label" for="doubtImage">Attach an image (optional)</label>
+    <input id="doubtImage" type="file" accept="image/*">
+    <div class="image-preview" id="doubtImagePreview" hidden></div>
 
     <button class="btn-primary" id="submitDoubt">Pin it</button>
     <p class="error-msg" id="composerError" hidden></p>

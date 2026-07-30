@@ -1,4 +1,4 @@
-import { db, auth } from "./firebase-config.js";
+import { db, auth, storage } from "./firebase-config.js";
 import {
   collection, addDoc, query, orderBy, onSnapshot,
   doc, updateDoc, deleteDoc, increment, serverTimestamp
@@ -6,6 +6,11 @@ import {
 import {
   signInWithEmailAndPassword, signOut, onAuthStateChanged
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import {
+  ref, uploadBytes, getDownloadURL
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
+
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // 5MB, matches Storage rules
 
 const SUBJECT_CLASS = { DAI: "cap-dai", DSA: "cap-dsa", DLDCA: "cap-dldca", Logic: "cap-logic", Misc: "cap-misc" };
 
@@ -46,6 +51,16 @@ function escapeHtml(str) {
   const div = document.createElement("div");
   div.textContent = str;
   return div.innerHTML;
+}
+
+async function uploadImageIfAny(file) {
+  if (!file) return null;
+  if (!file.type.startsWith("image/")) throw new Error("Please attach an image file.");
+  if (file.size > MAX_IMAGE_BYTES) throw new Error("Image is too large (5MB max).");
+  const path = `doubt-images/${Date.now()}-${Math.random().toString(36).slice(2)}-${file.name}`;
+  const fileRef = ref(storage, path);
+  await uploadBytes(fileRef, file);
+  return getDownloadURL(fileRef);
 }
 
 // ---- feed rendering ----
@@ -96,6 +111,7 @@ function renderFeed() {
         <div class="note-subject"><span class="cap ${SUBJECT_CLASS[post.subject] || ""}"></span>${escapeHtml(post.subject)}
           <span class="note-type-badge${(post.type || "Doubt") === "Logistics" ? " is-logistics" : ""}">${(post.type || "Doubt")}</span>
         </div>
+        ${post.imageUrl ? `<img class="note-image" src="${escapeHtml(post.imageUrl)}" alt="Attached image" loading="lazy">` : ""}
         <h3 class="note-title">${escapeHtml(post.title)}</h3>
         ${post.body ? `<p class="note-body">${escapeHtml(post.body)}</p>` : ""}
         <div class="note-meta"><span>${post.commentCount || 0} replies</span><span>${timeAgo(post.createdAt)}</span></div>
@@ -179,10 +195,19 @@ typeSelectEl.addEventListener("click", e => {
   selectedComposerType = btn.dataset.type;
 });
 
+document.getElementById("doubtImage").addEventListener("change", e => {
+  const file = e.target.files[0];
+  const preview = document.getElementById("doubtImagePreview");
+  if (!file) { preview.hidden = true; preview.innerHTML = ""; return; }
+  preview.innerHTML = `<img src="${URL.createObjectURL(file)}" alt="Preview">`;
+  preview.hidden = false;
+});
+
 document.getElementById("submitDoubt").addEventListener("click", async () => {
   const subject = document.getElementById("subjectSelect").value;
   const title = document.getElementById("doubtTitle").value.trim();
   const body = document.getElementById("doubtBody").value.trim();
+  const imageFile = document.getElementById("doubtImage").files[0];
   composerError.hidden = true;
 
   if (!title) {
@@ -191,10 +216,21 @@ document.getElementById("submitDoubt").addEventListener("click", async () => {
     return;
   }
 
+  const submitBtn = document.getElementById("submitDoubt");
+  const originalLabel = submitBtn.textContent;
+
   try {
+    let imageUrl = null;
+    if (imageFile) {
+      submitBtn.textContent = "Uploading image…";
+      submitBtn.disabled = true;
+      imageUrl = await uploadImageIfAny(imageFile);
+    }
+
     await addDoc(collection(db, "posts"), {
       subject, title, body,
       type: selectedComposerType,
+      imageUrl,
       commentCount: 0,
       pinned: false,
       archived: false,
@@ -202,6 +238,9 @@ document.getElementById("submitDoubt").addEventListener("click", async () => {
     });
     document.getElementById("doubtTitle").value = "";
     document.getElementById("doubtBody").value = "";
+    document.getElementById("doubtImage").value = "";
+    document.getElementById("doubtImagePreview").hidden = true;
+    document.getElementById("doubtImagePreview").innerHTML = "";
     typeSelectEl.querySelectorAll(".type-option").forEach(o => {
       o.classList.toggle("is-active", o.dataset.type === "Doubt");
       o.setAttribute("aria-checked", o.dataset.type === "Doubt" ? "true" : "false");
@@ -209,9 +248,12 @@ document.getElementById("submitDoubt").addEventListener("click", async () => {
     selectedComposerType = "Doubt";
     modalBackdrop.hidden = true;
   } catch (err) {
-    composerError.textContent = "Couldn't post — check your Firebase config and Firestore rules.";
+    composerError.textContent = err.message || "Couldn't post — check your Firebase config and Firestore rules.";
     composerError.hidden = false;
     console.error(err);
+  } finally {
+    submitBtn.textContent = originalLabel;
+    submitBtn.disabled = false;
   }
 });
 
@@ -230,14 +272,26 @@ function openThread(post) {
       <span class="note-type-badge${(post.type || "Doubt") === "Logistics" ? " is-logistics" : ""}">${(post.type || "Doubt")}</span>
     </div>
     <h2 class="thread-title">${escapeHtml(post.title)}</h2>
+    ${post.imageUrl ? `<img class="thread-image" src="${escapeHtml(post.imageUrl)}" alt="Attached image">` : ""}
     ${post.body ? `<p class="thread-body">${escapeHtml(post.body)}</p>` : ""}
     <div class="comments-list" id="commentsList"></div>
     <label class="field-label" for="commentInput">Add a reply</label>
     ${post.archived ? `<p class="modal-hint">This doubt is archived — replying brings it back to the board.</p>` : ""}
     <textarea id="commentInput" rows="3" maxlength="800" placeholder="Share how you'd approach it…"></textarea>
+    <label class="field-label" for="commentImage">Attach an image (optional)</label>
+    <input id="commentImage" type="file" accept="image/*">
+    <div class="image-preview" id="commentImagePreview" hidden></div>
     <button class="btn-primary" id="submitComment">Reply${isAdmin ? ` as ${escapeHtml(adminName)}` : ""}</button>
     <p class="error-msg" id="commentError" hidden></p>
   `;
+
+  document.getElementById("commentImage").addEventListener("change", e => {
+    const file = e.target.files[0];
+    const preview = document.getElementById("commentImagePreview");
+    if (!file) { preview.hidden = true; preview.innerHTML = ""; return; }
+    preview.innerHTML = `<img src="${URL.createObjectURL(file)}" alt="Preview">`;
+    preview.hidden = false;
+  });
 
   if (isAdmin) {
     adminThreadActions.hidden = false;
@@ -281,6 +335,7 @@ function openThread(post) {
       el.innerHTML = `
         ${isAdmin ? `<button class="comment-delete" data-id="${d.id}" title="Delete reply" aria-label="Delete reply">×</button>` : ""}
         ${escapeHtml(c.body)}
+        ${c.imageUrl ? `<img class="comment-image" src="${escapeHtml(c.imageUrl)}" alt="Attached image" loading="lazy">` : ""}
         <div class="comment-meta">${c.isAdmin ? `${escapeHtml(c.author || "Admin")}<span class="admin-badge">Admin</span> · ` : ""}${timeAgo(c.createdAt)}</div>`;
       commentsList.appendChild(el);
     });
@@ -298,6 +353,7 @@ function openThread(post) {
   document.getElementById("submitComment").addEventListener("click", async () => {
     const input = document.getElementById("commentInput");
     const commentError = document.getElementById("commentError");
+    const imageFile = document.getElementById("commentImage").files[0];
     const body = input.value.trim();
     commentError.hidden = true;
     if (!body) {
@@ -305,8 +361,16 @@ function openThread(post) {
       commentError.hidden = false;
       return;
     }
+    const submitBtn = document.getElementById("submitComment");
+    const originalLabel = submitBtn.textContent;
     try {
-      const commentData = { body, createdAt: serverTimestamp() };
+      let imageUrl = null;
+      if (imageFile) {
+        submitBtn.textContent = "Uploading image…";
+        submitBtn.disabled = true;
+        imageUrl = await uploadImageIfAny(imageFile);
+      }
+      const commentData = { body, imageUrl, createdAt: serverTimestamp() };
       if (isAdmin) {
         commentData.isAdmin = true;
         commentData.author = adminName;
@@ -319,10 +383,16 @@ function openThread(post) {
       }
       await updateDoc(doc(db, "posts", post.id), bumpData);
       input.value = "";
+      document.getElementById("commentImage").value = "";
+      document.getElementById("commentImagePreview").hidden = true;
+      document.getElementById("commentImagePreview").innerHTML = "";
     } catch (err) {
-      commentError.textContent = "Couldn't post the reply — check Firestore rules.";
+      commentError.textContent = err.message || "Couldn't post the reply — check Firestore rules.";
       commentError.hidden = false;
       console.error(err);
+    } finally {
+      submitBtn.textContent = originalLabel;
+      submitBtn.disabled = false;
     }
   });
 }
@@ -379,6 +449,29 @@ onAuthStateChanged(auth, user => {
   adminBarLoggedIn.hidden = !isAdmin;
   if (isAdmin) adminNameLabel.textContent = adminName;
   renderFeed();
+});
+
+// ---- theme toggle ----
+
+const themeToggle = document.getElementById("themeToggle");
+const savedTheme = localStorage.getItem("theme") || "dark";
+applyTheme(savedTheme);
+
+function applyTheme(theme) {
+  if (theme === "light") {
+    document.documentElement.setAttribute("data-theme", "light");
+    themeToggle.textContent = "☀️";
+  } else {
+    document.documentElement.removeAttribute("data-theme");
+    themeToggle.textContent = "🌙";
+  }
+}
+
+themeToggle.addEventListener("click", () => {
+  const isLight = document.documentElement.getAttribute("data-theme") === "light";
+  const next = isLight ? "dark" : "light";
+  applyTheme(next);
+  localStorage.setItem("theme", next);
 });
 
 // ---- init ----
