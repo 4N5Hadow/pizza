@@ -31,7 +31,7 @@ function hashRotation(id) {
 }
 
 function timeAgo(ts) {
-  if (!ts) return "just now";
+  if (!ts || typeof ts.toDate !== "function") return "recently";
   const seconds = Math.floor((Date.now() - ts.toDate().getTime()) / 1000);
   if (seconds < 60) return "just now";
   const mins = Math.floor(seconds / 60);
@@ -81,25 +81,31 @@ function renderFeed() {
   emptyState.hidden = true;
 
   posts.forEach(post => {
-    const card = document.createElement("article");
-    card.className = "note" + (post.pinned ? " is-pinned" : "");
-    card.style.transform = `rotate(${hashRotation(post.id)}deg)`;
-    card.tabIndex = 0;
-    card.setAttribute("role", "button");
-    card.setAttribute("aria-label", `Open doubt: ${post.title}`);
+    try {
+      if (typeof post.title !== "string" || typeof post.subject !== "string") return; // skip malformed docs
 
-    card.innerHTML = `
-      ${post.pinned ? '<span class="pin-flag" title="Pinned">📌</span>' : ""}
-      <div class="note-subject"><span class="cap ${SUBJECT_CLASS[post.subject] || ""}"></span>${escapeHtml(post.subject)}
-        <span class="note-type-badge${(post.type || "Doubt") === "Logistics" ? " is-logistics" : ""}">${(post.type || "Doubt")}</span>
-      </div>
-      <h3 class="note-title">${escapeHtml(post.title)}</h3>
-      ${post.body ? `<p class="note-body">${escapeHtml(post.body)}</p>` : ""}
-      <div class="note-meta"><span>${post.commentCount || 0} replies</span><span>${timeAgo(post.createdAt)}</span></div>
-    `;
-    card.addEventListener("click", () => openThread(post));
-    card.addEventListener("keydown", e => { if (e.key === "Enter") openThread(post); });
-    feedEl.appendChild(card);
+      const card = document.createElement("article");
+      card.className = "note" + (post.pinned ? " is-pinned" : "");
+      card.style.transform = `rotate(${hashRotation(post.id)}deg)`;
+      card.tabIndex = 0;
+      card.setAttribute("role", "button");
+      card.setAttribute("aria-label", `Open doubt: ${post.title}`);
+
+      card.innerHTML = `
+        ${post.pinned ? '<span class="pin-flag" title="Pinned">📌</span>' : ""}
+        <div class="note-subject"><span class="cap ${SUBJECT_CLASS[post.subject] || ""}"></span>${escapeHtml(post.subject)}
+          <span class="note-type-badge${(post.type || "Doubt") === "Logistics" ? " is-logistics" : ""}">${(post.type || "Doubt")}</span>
+        </div>
+        <h3 class="note-title">${escapeHtml(post.title)}</h3>
+        ${post.body ? `<p class="note-body">${escapeHtml(post.body)}</p>` : ""}
+        <div class="note-meta"><span>${post.commentCount || 0} replies</span><span>${timeAgo(post.createdAt)}</span></div>
+      `;
+      card.addEventListener("click", () => openThread(post));
+      card.addEventListener("keydown", e => { if (e.key === "Enter") openThread(post); });
+      feedEl.appendChild(card);
+    } catch (err) {
+      console.error("Skipped a malformed post:", post.id, err);
+    }
   });
 }
 
