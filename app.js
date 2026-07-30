@@ -1,4 +1,4 @@
-import { db, auth, storage } from "./firebase-config.js";
+import { db, auth } from "./firebase-config.js";
 import {
   collection, addDoc, query, orderBy, onSnapshot,
   doc, updateDoc, deleteDoc, increment, serverTimestamp
@@ -6,11 +6,9 @@ import {
 import {
   signInWithEmailAndPassword, signOut, onAuthStateChanged
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import {
-  ref, uploadBytes, getDownloadURL
-} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
 
-const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // 5MB, matches Storage rules
+const MAX_IMAGE_DIMENSION = 900;   // longest side, in pixels, after resizing
+const MAX_DATA_URL_LENGTH = 700000; // keeps the whole Firestore doc safely under 1MB
 
 const SUBJECT_CLASS = { DAI: "cap-dai", DSA: "cap-dsa", DLDCA: "cap-dldca", Logic: "cap-logic", Misc: "cap-misc" };
 
@@ -53,14 +51,45 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
-async function uploadImageIfAny(file) {
-  if (!file) return null;
-  if (!file.type.startsWith("image/")) throw new Error("Please attach an image file.");
-  if (file.size > MAX_IMAGE_BYTES) throw new Error("Image is too large (5MB max).");
-  const path = `doubt-images/${Date.now()}-${Math.random().toString(36).slice(2)}-${file.name}`;
-  const fileRef = ref(storage, path);
-  await uploadBytes(fileRef, file);
-  return getDownloadURL(fileRef);
+function compressImage(file) {
+  return new Promise((resolve, reject) => {
+    if (!file.type.startsWith("image/")) {
+      reject(new Error("Please attach an image file."));
+      return;
+    }
+    const img = new Image();
+    const objectUrl = URL.createObjectURL(file);
+    img.onload = () => {
+      let { width, height } = img;
+      if (width > height && width > MAX_IMAGE_DIMENSION) {
+        height = Math.round(height * (MAX_IMAGE_DIMENSION / width));
+        width = MAX_IMAGE_DIMENSION;
+      } else if (height > MAX_IMAGE_DIMENSION) {
+        width = Math.round(width * (MAX_IMAGE_DIMENSION / height));
+        height = MAX_IMAGE_DIMENSION;
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      canvas.getContext("2d").drawImage(img, 0, 0, width, height);
+      URL.revokeObjectURL(objectUrl);
+
+      // step down quality until it comfortably fits in a Firestore document
+      let quality = 0.8;
+      let dataUrl = canvas.toDataURL("image/jpeg", quality);
+      while (dataUrl.length > MAX_DATA_URL_LENGTH && quality > 0.3) {
+        quality -= 0.1;
+        dataUrl = canvas.toDataURL("image/jpeg", quality);
+      }
+      if (dataUrl.length > MAX_DATA_URL_LENGTH) {
+        reject(new Error("Image is too large even after compression — try a smaller screenshot."));
+        return;
+      }
+      resolve(dataUrl);
+    };
+    img.onerror = () => { URL.revokeObjectURL(objectUrl); reject(new Error("Couldn't read that image file.")); };
+    img.src = objectUrl;
+  });
 }
 
 // ---- feed rendering ----
@@ -111,7 +140,7 @@ function renderFeed() {
         <div class="note-subject"><span class="cap ${SUBJECT_CLASS[post.subject] || ""}"></span>${escapeHtml(post.subject)}
           <span class="note-type-badge${(post.type || "Doubt") === "Logistics" ? " is-logistics" : ""}">${(post.type || "Doubt")}</span>
         </div>
-        ${post.imageUrl ? `<img class="note-image" src="${escapeHtml(post.imageUrl)}" alt="Attached image" loading="lazy">` : ""}
+        ${post.imageData ? `<img class="note-image" src="${escapeHtml(post.imageData)}" alt="Attached image" loading="lazy">` : ""}
         <h3 class="note-title">${escapeHtml(post.title)}</h3>
         ${post.body ? `<p class="note-body">${escapeHtml(post.body)}</p>` : ""}
         <div class="note-meta"><span>${post.commentCount || 0} replies</span><span>${timeAgo(post.createdAt)}</span></div>
@@ -220,17 +249,17 @@ document.getElementById("submitDoubt").addEventListener("click", async () => {
   const originalLabel = submitBtn.textContent;
 
   try {
-    let imageUrl = null;
+    let imageData = null;
     if (imageFile) {
-      submitBtn.textContent = "Uploading image…";
+      submitBtn.textContent = "Compressing image…";
       submitBtn.disabled = true;
-      imageUrl = await uploadImageIfAny(imageFile);
+      imageData = await compressImage(imageFile);
     }
 
     await addDoc(collection(db, "posts"), {
       subject, title, body,
       type: selectedComposerType,
-      imageUrl,
+      imageData,
       commentCount: 0,
       pinned: false,
       archived: false,
@@ -272,7 +301,7 @@ function openThread(post) {
       <span class="note-type-badge${(post.type || "Doubt") === "Logistics" ? " is-logistics" : ""}">${(post.type || "Doubt")}</span>
     </div>
     <h2 class="thread-title">${escapeHtml(post.title)}</h2>
-    ${post.imageUrl ? `<img class="thread-image" src="${escapeHtml(post.imageUrl)}" alt="Attached image">` : ""}
+    ${post.imageData ? `<img class="thread-image" src="${escapeHtml(post.imageData)}" alt="Attached image">` : ""}
     ${post.body ? `<p class="thread-body">${escapeHtml(post.body)}</p>` : ""}
     <div class="comments-list" id="commentsList"></div>
     <label class="field-label" for="commentInput">Add a reply</label>
@@ -335,7 +364,7 @@ function openThread(post) {
       el.innerHTML = `
         ${isAdmin ? `<button class="comment-delete" data-id="${d.id}" title="Delete reply" aria-label="Delete reply">×</button>` : ""}
         ${escapeHtml(c.body)}
-        ${c.imageUrl ? `<img class="comment-image" src="${escapeHtml(c.imageUrl)}" alt="Attached image" loading="lazy">` : ""}
+        ${c.imageData ? `<img class="comment-image" src="${escapeHtml(c.imageData)}" alt="Attached image" loading="lazy">` : ""}
         <div class="comment-meta">${c.isAdmin ? `${escapeHtml(c.author || "Admin")}<span class="admin-badge">Admin</span> · ` : ""}${timeAgo(c.createdAt)}</div>`;
       commentsList.appendChild(el);
     });
@@ -364,13 +393,13 @@ function openThread(post) {
     const submitBtn = document.getElementById("submitComment");
     const originalLabel = submitBtn.textContent;
     try {
-      let imageUrl = null;
+      let imageData = null;
       if (imageFile) {
-        submitBtn.textContent = "Uploading image…";
+        submitBtn.textContent = "Compressing image…";
         submitBtn.disabled = true;
-        imageUrl = await uploadImageIfAny(imageFile);
+        imageData = await compressImage(imageFile);
       }
-      const commentData = { body, imageUrl, createdAt: serverTimestamp() };
+      const commentData = { body, imageData, createdAt: serverTimestamp() };
       if (isAdmin) {
         commentData.isAdmin = true;
         commentData.author = adminName;
